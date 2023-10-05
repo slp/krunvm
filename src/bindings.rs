@@ -9,6 +9,7 @@ extern "C" {
     pub fn krun_set_vm_config(ctx: u32, num_vcpus: u8, ram_mib: u32) -> i32;
     pub fn krun_set_root(ctx: u32, root_path: *const i8) -> i32;
     pub fn krun_set_mapped_volumes(ctx: u32, mapped_volumes: *const *const i8) -> i32;
+    pub fn krun_set_passt_fd(ctx: u32, fd: i32);
     pub fn krun_set_port_map(ctx: u32, port_map: *const *const i8) -> i32;
     pub fn krun_set_workdir(ctx: u32, workdir_path: *const i8) -> i32;
     pub fn krun_set_exec(

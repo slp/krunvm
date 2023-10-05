@@ -6,8 +6,14 @@ use std::fs::File;
 #[cfg(target_os = "linux")]
 use std::io::{Error, ErrorKind};
 use std::os::unix::io::AsRawFd;
+use std::os::unix::net::UnixStream;
 #[cfg(target_os = "macos")]
 use std::path::Path;
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::Duration;
+
+use tempdir::TempDir;
 
 use super::bindings;
 use super::utils::{mount_container, umount_container};
@@ -69,6 +75,32 @@ fn map_volumes(ctx: u32, vmcfg: &VmConfig, rootfs: &str) {
 unsafe fn exec_vm(vmcfg: &VmConfig, rootfs: &str, cmd: Option<&str>, args: Vec<CString>) {
     //bindings::krun_set_log_level(9);
 
+    /*
+     * It'd be better using a socketpair, but seems like the current SELinux policy
+     * in Fedora doesn't allow passt to inherit FDs from us. Let's use a conventional
+     * UNIX socket for the moment.
+     */
+    let tmp_dir = TempDir::new("krun-passt").unwrap();
+    let socket_path: String = format!(
+        "{}/passt.sock",
+        tmp_dir.path().to_string_lossy().to_string()
+    );
+    let mut passt_cmd = &mut Command::new("passt");
+    passt_cmd = passt_cmd
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .arg("-f")
+        .arg("-1")
+        .arg("-s")
+        .arg(socket_path.clone());
+
+    for (host_port, guest_port) in vmcfg.mapped_ports.iter() {
+        passt_cmd = passt_cmd
+            .arg("-t")
+            .arg(format!("{}:{}", host_port, guest_port));
+    }
+    passt_cmd.spawn().unwrap();
+
     let ctx = bindings::krun_create_ctx() as u32;
 
     let ret = bindings::krun_set_vm_config(ctx, vmcfg.cpus as u8, vmcfg.mem);
@@ -86,6 +118,20 @@ unsafe fn exec_vm(vmcfg: &VmConfig, rootfs: &str, cmd: Option<&str>, args: Vec<C
 
     map_volumes(ctx, vmcfg, rootfs);
 
+    let sp_path = tmp_dir.path().join("passt.sock");
+    loop {
+        if sp_path.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let stream = UnixStream::connect(sp_path).unwrap();
+    drop(tmp_dir);
+
+    bindings::krun_set_passt_fd(ctx, stream.as_raw_fd());
+
+    /*
     let mut ports = Vec::new();
     for (host_port, guest_port) in vmcfg.mapped_ports.iter() {
         let map = format!("{}:{}", host_port, guest_port);
@@ -101,6 +147,7 @@ unsafe fn exec_vm(vmcfg: &VmConfig, rootfs: &str, cmd: Option<&str>, args: Vec<C
         println!("Error setting VM port map");
         std::process::exit(-1);
     }
+    */
 
     if !vmcfg.workdir.is_empty() {
         let c_workdir = CString::new(vmcfg.workdir.clone()).unwrap();
