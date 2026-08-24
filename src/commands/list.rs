@@ -17,7 +17,7 @@ impl ListCmd {
         if cfg.vmconfig_map.is_empty() {
             println!("No microVMs found");
         } else {
-            for (_name, vm) in cfg.vmconfig_map.iter() {
+            for vm in cfg.vmconfig_map.values() {
                 println!();
                 printvm(vm);
             }

@@ -60,7 +60,7 @@ impl ChangeVmCmd {
 
             let mut vmcfg = match cfg.vmconfig_map.remove(&self.name) {
                 None => {
-                    println!("No VM found with name {}", &self.name);
+                    println!("No VM found with name {}", self.name);
                     std::process::exit(-1);
                 }
                 Some(vmcfg) => vmcfg,
